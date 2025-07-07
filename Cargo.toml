@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "AI Security RelayNode - Combined Nostr Relay and IPFS Node for Starcom Teams"
 license = "MIT"
-repository = "https://github.com/starcom-app/ai-security-relaynode"
+repository = "https://github.com/Jthora/ai-security-relaynode"
 
 [dependencies]
 # Core runtime
