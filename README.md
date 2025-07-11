@@ -1,5 +1,9 @@
 # 🛡️ AI Security RelayNode
 
+
+[![DOI](https://zenodo.org/badge/1015653739.svg)](https://doi.org/10.5281/zenodo.15865438)
+
+
 > **The backbone of the Starcom decentralized application ecosystem**
 
 A high-performance, multi-protocol backend service that bridges traditional web APIs with decentralized protocols like Nostr and IPFS. Built in Rust for maximum security, performance, and reliability.
