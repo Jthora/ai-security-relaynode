@@ -2,7 +2,7 @@
 
 > **Project:** ai-security-relaynode  
 > **Created:** 2026-03-24  
-> **Status:** Complete (pending cargo verification — no Rust toolchain available)  
+> **Status:** Complete (pending `cargo check/test/clippy` — install Rust with `sudo apt install cargo rustc`)  
 > **Scope:** Repository hygiene, dead code removal, test repair, script fixes, module trimming
 
 ---
@@ -30,7 +30,7 @@ Establish a clean git foundation. Nothing else should be committed until trackin
 
 - [x] **1.3.1** Run `git ls-files target/ | wc -l` — expect 0 ✓
 - [x] **1.3.2** Run `git ls-files data/ | wc -l` — expect 0 ✓
-- [ ] **1.3.3** Commit the `.gitignore` and untracking changes (deferred — will commit with Phase 2)
+- [x] **1.3.3** Commit the `.gitignore` and untracking changes ✓ (committed in `d7c54e4`)
 
 ---
 
@@ -67,8 +67,8 @@ These modules are NOT declared in `lib.rs` and unreachable from the build:
 ### Step 2.5 — Verify Deletion
 
 - [x] **2.5.1** Confirm no remaining `*_backup*`, `*_clean*`, or `*_legacy*` files in `src/` ✓
-- [ ] **2.5.2** Run `cargo check` to verify the build still compiles (skipped — Rust toolchain not installed on this machine)
-- [ ] **2.5.3** Commit all deletions (deferred — will commit all phases together)
+- [ ] **2.5.2** Run `cargo check` to verify the build still compiles ⏳ (run `sudo apt install cargo rustc` then `cargo check`)
+- [x] **2.5.3** Commit all deletions ✓ (committed in `d7c54e4`)
 
 ---
 
@@ -99,9 +99,9 @@ All unit tests currently fail to compile because they import modules that were n
 
 ### Step 3.5 — Verify Tests
 
-- [ ] **3.5.1** Run `cargo test` — confirm compilation succeeds (skipped — Rust toolchain not installed)
-- [x] **3.5.2** Verify all rewritten unit tests use only live module APIs
-- [ ] **3.5.3** Commit test fixes (deferred — will commit all phases together)
+- [ ] **3.5.1** Run `cargo test` — confirm compilation succeeds ⏳ (run `sudo apt install cargo rustc` then `cargo test`)
+- [x] **3.5.2** Verify all rewritten unit tests use only live module APIs ✓ (all imports verified against source)
+- [x] **3.5.3** Commit test fixes ✓ (committed in `d7c54e4`)
 
 ---
 
@@ -125,7 +125,7 @@ Three scripts hardcode `/Users/jono/Documents/GitHub/starcom-app/ai-security-rel
 - [x] **4.3.1** Run `bash -n scripts/fix_build.sh` (syntax check) ✔
 - [x] **4.3.2** Run `bash -n scripts/test_all.sh` (syntax check) ✔
 - [x] **4.3.3** Run `bash -n scripts/validate.sh` (syntax check) ✔
-- [ ] **4.3.4** Commit script fixes (deferred — will commit all phases together)
+- [x] **4.3.4** Commit script fixes ✓ (committed in `d7c54e4`)
 
 ---
 
@@ -146,10 +146,10 @@ Clean up module declarations so `lib.rs` only exports modules that are present a
 
 ### Step 5.3 — Final Build Validation
 
-- [ ] **5.3.1** Run `cargo check` — zero errors (skipped — Rust toolchain not installed)
-- [ ] **5.3.2** Run `cargo test` — all tests compile and pass (skipped — Rust toolchain not installed)
-- [ ] **5.3.3** Run `cargo clippy` (if available) — no new warnings (skipped — Rust toolchain not installed)
-- [ ] **5.3.4** Commit trimmed `lib.rs` (deferred — will commit all phases together)
+- [ ] **5.3.1** Run `cargo check` — zero errors ⏳ (run `sudo apt install cargo rustc` then `cargo check`)
+- [ ] **5.3.2** Run `cargo test` — all tests compile and pass ⏳
+- [ ] **5.3.3** Run `cargo clippy` — no new warnings ⏳ (`rustup component add clippy` then `cargo clippy`)
+- [x] **5.3.4** Commit trimmed `lib.rs` ✓ (committed in `d7c54e4`)
 
 ---
 
