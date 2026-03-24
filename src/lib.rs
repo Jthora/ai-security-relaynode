@@ -19,11 +19,7 @@ pub mod validation;
 
 // Legacy modules for compatibility
 pub mod subnet_types;
-pub mod services;
 pub mod subnet_manager;
-
-// Clean architecture modules (simplified for now)
-pub mod clean_config_simple;
 
 // Exports for compatibility
 pub use nostr_relay::NostrRelay;

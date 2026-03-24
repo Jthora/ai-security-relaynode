@@ -1,9 +1,13 @@
 #!/bin/bash
 
 # AI Security RelayNode Development Validation Script
-# This script validates the current state and guides next steps
+# Validates project structure, compilation, and test readiness
 
 set -e
+
+# Project root (auto-detect from script location)
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$PROJECT_ROOT"
 
 echo "🔍 AI Security RelayNode Development Validation"
 echo "================================================"
@@ -15,10 +19,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
-
-# Project root
-PROJECT_ROOT="/Users/jono/Documents/GitHub/starcom-app/ai-security-relaynode"
-cd "$PROJECT_ROOT"
 
 echo "📂 Project Location: $PROJECT_ROOT"
 echo ""
@@ -57,29 +57,25 @@ check_file "src/main.rs"
 check_file "src/lib.rs"
 
 echo ""
-echo "Clean Architecture Modules:"
-check_file "src/clean_subnet.rs"
-check_file "src/clean_gateway.rs"
-check_file "src/network_coordinator.rs"
-check_file "src/clean_config.rs"
-
-echo ""
-echo "Legacy Modules (to be refactored):"
-check_file "src/config.rs"
-check_file "src/subnet_manager.rs"
-check_file "src/services.rs"
-
-echo ""
 echo "Core Services:"
 check_file "src/nostr_relay.rs"
 check_file "src/ipfs_node.rs"
 check_file "src/security_layer.rs"
 check_file "src/api_gateway.rs"
+check_file "src/investigation_service.rs"
 
 echo ""
-echo "Documentation:"
-check_file "docs/DEVELOPMENT-ROADMAP.md"
-check_file "docs/TESTING-STRATEGY.md"
+echo "Infrastructure:"
+check_file "src/config.rs"
+check_file "src/database.rs"
+check_file "src/auth.rs"
+check_file "src/validation.rs"
+
+echo ""
+echo "Subnet & Networking:"
+check_file "src/subnet_manager.rs"
+check_file "src/subnet_types.rs"
+check_file "src/services.rs"
 
 echo ""
 
@@ -87,14 +83,18 @@ echo ""
 echo "🦀 RUST COMPILATION CHECK"
 echo "──────────────────────────"
 
-echo "Running cargo check..."
-if cargo check --quiet 2>/dev/null; then
-    echo -e "${GREEN}✅ Compilation successful${NC}"
-    COMPILATION_SUCCESS=true
+if command -v cargo &> /dev/null; then
+    echo "Running cargo check..."
+    if cargo check --quiet 2>/dev/null; then
+        echo -e "${GREEN}✅ Compilation successful${NC}"
+        COMPILATION_SUCCESS=true
+    else
+        echo -e "${RED}❌ Compilation failed${NC}"
+        cargo check 2>&1 | head -20
+        COMPILATION_SUCCESS=false
+    fi
 else
-    echo -e "${RED}❌ Compilation failed${NC}"
-    echo "Running cargo check with output:"
-    cargo check 2>&1 | head -20
+    echo -e "${YELLOW}⚠️  cargo not found — install Rust toolchain${NC}"
     COMPILATION_SUCCESS=false
 fi
 
@@ -106,61 +106,17 @@ echo "────────────────────────�
 
 echo "Test Directories:"
 check_dir "tests"
-check_dir "tests/unit" || mkdir -p tests/unit
-check_dir "tests/integration" || mkdir -p tests/integration
-check_dir "tests/e2e" || mkdir -p tests/e2e
+check_dir "tests/unit"
+check_dir "tests/integration"
 
 echo ""
 echo "Test Files:"
-check_file "tests/unit/mod.rs" || echo -e "  ${YELLOW}⚠️${NC}  tests/unit/mod.rs (to be created)"
-check_file "tests/integration/mod.rs" || echo -e "  ${YELLOW}⚠️${NC}  tests/integration/mod.rs (to be created)"
-
-echo ""
-
-# Analyze module dependencies
-echo "🔗 MODULE DEPENDENCY ANALYSIS"
-echo "──────────────────────────────"
-
-echo "Checking for clean separation..."
-
-# Check if clean modules exist and have proper separation
-if [[ -f "src/clean_subnet.rs" ]] && [[ -f "src/clean_gateway.rs" ]]; then
-    echo -e "${GREEN}✅ Clean architecture modules present${NC}"
-    
-    # Check for cross-dependencies (this is a simple check)
-    if grep -q "clean_gateway" src/clean_subnet.rs 2>/dev/null; then
-        echo -e "${RED}❌ Subnet has gateway dependency - violates clean architecture${NC}"
-    else
-        echo -e "${GREEN}✅ Subnet module is gateway-independent${NC}"
-    fi
-    
-    if grep -q "clean_subnet" src/clean_gateway.rs 2>/dev/null; then
-        echo -e "${RED}❌ Gateway has subnet dependency - violates clean architecture${NC}"
-    else
-        echo -e "${GREEN}✅ Gateway module is subnet-independent${NC}"
-    fi
-else
-    echo -e "${YELLOW}⚠️  Clean architecture modules need completion${NC}"
-fi
-
-echo ""
-
-# Check configuration
-echo "⚙️  CONFIGURATION ANALYSIS"
-echo "──────────────────────────"
-
-if [[ -f "src/clean_config.rs" ]]; then
-    echo -e "${GREEN}✅ Clean configuration module exists${NC}"
-    
-    # Check if main.rs uses clean config
-    if grep -q "clean_config" src/main.rs 2>/dev/null; then
-        echo -e "${GREEN}✅ Main.rs uses clean configuration${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Main.rs needs to be updated to use clean configuration${NC}"
-    fi
-else
-    echo -e "${RED}❌ Clean configuration module missing${NC}"
-fi
+check_file "tests/unit/mod.rs"
+check_file "tests/unit/common.rs"
+check_file "tests/unit/subnet_tests.rs"
+check_file "tests/unit/gateway_tests.rs"
+check_file "tests/unit/coordinator_tests.rs"
+check_file "tests/integration/mod.rs"
 
 echo ""
 
@@ -187,101 +143,86 @@ if [[ -f "Cargo.lock" ]]; then
     DEP_COUNT=$(grep -c "name = " Cargo.lock || echo "0")
     echo -e "  ${GREEN}✅${NC} $DEP_COUNT dependencies resolved"
 else
-    echo -e "  ${YELLOW}⚠️${NC}  No Cargo.lock file - run 'cargo build' first"
+    echo -e "  ${YELLOW}⚠️${NC}  No Cargo.lock file — run 'cargo build' first"
 fi
 
 echo ""
 
-# Generate development status report
-echo "📊 DEVELOPMENT STATUS SUMMARY"
-echo "──────────────────────────────"
+# Repository hygiene check
+echo "📦 REPOSITORY HYGIENE"
+echo "──────────────────────"
+
+if [[ -f ".gitignore" ]]; then
+    echo -e "  ${GREEN}✅${NC} .gitignore present"
+else
+    echo -e "  ${RED}❌${NC} .gitignore missing"
+fi
+
+TRACKED_TARGETS=$(git ls-files target/ 2>/dev/null | wc -l)
+if [[ "$TRACKED_TARGETS" -eq 0 ]]; then
+    echo -e "  ${GREEN}✅${NC} target/ not tracked in git"
+else
+    echo -e "  ${RED}❌${NC} $TRACKED_TARGETS build artifacts tracked in git"
+fi
+
+TRACKED_DB=$(git ls-files data/ 2>/dev/null | wc -l)
+if [[ "$TRACKED_DB" -eq 0 ]]; then
+    echo -e "  ${GREEN}✅${NC} data/ databases not tracked in git"
+else
+    echo -e "  ${RED}❌${NC} $TRACKED_DB database files tracked in git"
+fi
+
+echo ""
+
+# Summary
+echo "📊 VALIDATION SUMMARY"
+echo "──────────────────────"
 
 TOTAL_CHECKS=0
 PASSED_CHECKS=0
 
-# Core architecture check
-if [[ -f "src/clean_subnet.rs" ]] && [[ -f "src/clean_gateway.rs" ]] && [[ -f "src/network_coordinator.rs" ]]; then
-    echo -e "${GREEN}✅ Clean Architecture Foundation${NC} - Core modules present"
+if [[ -f "src/main.rs" ]] && [[ -f "src/lib.rs" ]] && [[ -f "Cargo.toml" ]]; then
+    echo -e "${GREEN}✅ Core project structure${NC}"
     ((PASSED_CHECKS++))
 else
-    echo -e "${RED}❌ Clean Architecture Foundation${NC} - Missing core modules"
+    echo -e "${RED}❌ Core project structure — missing files${NC}"
 fi
 ((TOTAL_CHECKS++))
 
-# Documentation check
-if [[ -f "docs/DEVELOPMENT-ROADMAP.md" ]] && [[ -f "docs/TESTING-STRATEGY.md" ]]; then
-    echo -e "${GREEN}✅ Documentation${NC} - Development guides present"
-    ((PASSED_CHECKS++))
-else
-    echo -e "${RED}❌ Documentation${NC} - Missing development guides"
-fi
-((TOTAL_CHECKS++))
-
-# Compilation check
 if [[ "$COMPILATION_SUCCESS" == "true" ]]; then
-    echo -e "${GREEN}✅ Compilation${NC} - Project builds successfully"
+    echo -e "${GREEN}✅ Compilation${NC}"
     ((PASSED_CHECKS++))
 else
-    echo -e "${RED}❌ Compilation${NC} - Build errors need resolution"
+    echo -e "${RED}❌ Compilation${NC}"
 fi
 ((TOTAL_CHECKS++))
 
-# Test infrastructure check
-if [[ -d "tests" ]]; then
-    echo -e "${GREEN}✅ Test Infrastructure${NC} - Test directories present"
+if [[ -d "tests/unit" ]] && [[ -f "tests/unit/mod.rs" ]]; then
+    echo -e "${GREEN}✅ Test infrastructure${NC}"
     ((PASSED_CHECKS++))
 else
-    echo -e "${RED}❌ Test Infrastructure${NC} - Missing test framework"
+    echo -e "${RED}❌ Test infrastructure${NC}"
+fi
+((TOTAL_CHECKS++))
+
+if [[ -f ".gitignore" ]] && [[ "$TRACKED_TARGETS" -eq 0 ]]; then
+    echo -e "${GREEN}✅ Repository hygiene${NC}"
+    ((PASSED_CHECKS++))
+else
+    echo -e "${RED}❌ Repository hygiene${NC}"
 fi
 ((TOTAL_CHECKS++))
 
 echo ""
-echo "Overall Progress: $PASSED_CHECKS/$TOTAL_CHECKS checks passed"
+echo "Overall: $PASSED_CHECKS/$TOTAL_CHECKS checks passed"
 
 if [[ $PASSED_CHECKS -eq $TOTAL_CHECKS ]]; then
-    echo -e "${GREEN}🎉 All checks passed! Ready for implementation.${NC}"
-    EXIT_CODE=0
+    echo -e "${GREEN}🎉 All checks passed!${NC}"
+    exit 0
 elif [[ $PASSED_CHECKS -ge 2 ]]; then
     echo -e "${YELLOW}⚠️  Good progress, some issues to address.${NC}"
-    EXIT_CODE=1
+    exit 1
 else
-    echo -e "${RED}❌ Significant issues found. Focus on foundation first.${NC}"
-    EXIT_CODE=2
+    echo -e "${RED}❌ Significant issues found.${NC}"
+    exit 2
 fi
-
-echo ""
-
-# Next steps recommendations
-echo "🎯 RECOMMENDED NEXT STEPS"
-echo "──────────────────────────"
-
-if [[ "$COMPILATION_SUCCESS" != "true" ]]; then
-    echo -e "${BLUE}1.${NC} Fix compilation errors (priority: high)"
-    echo "   Run: cargo check --verbose"
-    echo ""
-fi
-
-if [[ ! -f "src/clean_config.rs" ]] || ! grep -q "clean_config" src/main.rs 2>/dev/null; then
-    echo -e "${BLUE}2.${NC} Complete clean configuration module"
-    echo "   Update main.rs to use clean architecture"
-    echo ""
-fi
-
-if [[ ! -d "tests/unit" ]] || [[ ! -f "tests/unit/mod.rs" ]]; then
-    echo -e "${BLUE}3.${NC} Set up test infrastructure"
-    echo "   Create unit test framework"
-    echo ""
-fi
-
-echo -e "${BLUE}4.${NC} Implement integration tests"
-echo "   Test subnet/gateway interaction through coordinator"
-echo ""
-
-echo -e "${BLUE}5.${NC} Create deployment pattern examples"
-echo "   Demonstrate different node configurations"
-echo ""
-
-echo "📝 Run this script regularly to track progress."
-echo ""
-
-exit $EXIT_CODE

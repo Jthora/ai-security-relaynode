@@ -17,7 +17,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Project root
-PROJECT_ROOT="/Users/jono/Documents/GitHub/starcom-app/ai-security-relaynode"
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 echo "📂 Project Location: $PROJECT_ROOT"

@@ -1,0 +1,27 @@
+# Rust build artifacts
+target/
+
+# SQLite runtime databases
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Node
+node_modules/
+
+# Backup files
+*.backup
+
+# Generated test credentials
+test-token.txt
+
+# Editor & OS artifacts
+.DS_Store
+*.swp
+*.swo
+*~
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+node_modules

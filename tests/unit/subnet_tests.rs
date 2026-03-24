@@ -1,159 +1,173 @@
-// Unit Tests for CleanSubnet
-// Testing subnet membership and resource management in isolation
+// Unit Tests for Subnet Types and Configuration
+// Testing subnet data structures, validation, and bridge management
 
-use std::net::SocketAddr;
-use ai_security_relaynode::clean_subnet::{CleanSubnet, SubnetMember, SubnetRole, SubnetResource, ResourceType};
+use ai_security_relaynode::config::{SecurityLevel, SubnetMode};
+use ai_security_relaynode::subnet_types::{
+    TeamAnnouncement, BridgeConnection, BridgeConnectionInfo, BridgeStatus,
+    BridgeDiscoveryMessage, DiscoveryMessageType, NodeMetrics,
+};
 
 #[cfg(test)]
 mod subnet_tests {
     use super::*;
 
-    fn create_test_subnet() -> CleanSubnet {
-        CleanSubnet::new(
-            "test-subnet-001".to_string(),
-            "Test Team Alpha".to_string(),
-            "127.0.0.1:8080".parse().unwrap(),
+    fn create_test_announcement() -> TeamAnnouncement {
+        TeamAnnouncement::new(
+            "team-alpha".to_string(),
+            "node-001".to_string(),
+            vec!["relay".to_string(), "ipfs".to_string()],
+            SecurityLevel::Unclassified,
+            "pubkey_abc123".to_string(),
         )
     }
 
-    fn create_test_member(public_key: &str, role: SubnetRole) -> SubnetMember {
-        SubnetMember {
-            public_key: public_key.to_string(),
-            node_address: "127.0.0.1:8081".parse().unwrap(),
-            role,
-            joined_at: 1640995200, // 2022-01-01 00:00:00 UTC
-            last_seen: 1640995200,
-            capabilities: vec!["nostr".to_string(), "ipfs".to_string()],
-            is_online: true,
+    fn create_test_bridge_info() -> BridgeConnectionInfo {
+        BridgeConnectionInfo {
+            remote_address: "127.0.0.1".to_string(),
+            remote_port: 8082,
+            local_port: 8083,
+            encryption_enabled: true,
+            protocol_version: "1.0".to_string(),
         }
     }
 
-    #[tokio::test]
-    async fn test_subnet_creation() {
-        let subnet = create_test_subnet();
-        assert_eq!(subnet.get_subnet_id(), "test-subnet-001");
-        assert_eq!(subnet.get_subnet_name(), "Test Team Alpha");
-        assert_eq!(subnet.get_member_count().await, 0);
+    #[test]
+    fn test_team_announcement_creation() {
+        let announcement = create_test_announcement();
+        assert_eq!(announcement.team_id, "team-alpha");
+        assert_eq!(announcement.node_id, "node-001");
+        assert_eq!(announcement.capabilities.len(), 2);
+        assert_eq!(announcement.public_key, "pubkey_abc123");
     }
 
-    #[tokio::test]
-    async fn test_add_member() {
-        let mut subnet = create_test_subnet();
-        let member = create_test_member("alice_pub_key", SubnetRole::Leader);
-        
-        let result = subnet.add_member(member.clone()).await;
-        assert!(result.is_ok());
-        assert_eq!(subnet.get_member_count().await, 1);
-        
-        let retrieved_member = subnet.get_member("alice_pub_key").await;
-        assert!(retrieved_member.is_some());
-        assert_eq!(retrieved_member.unwrap().role, SubnetRole::Leader);
+    #[test]
+    fn test_team_announcement_validation_valid() {
+        let announcement = create_test_announcement();
+        assert!(announcement.validate().is_ok());
     }
 
-    #[tokio::test]
-    async fn test_remove_member() {
-        let mut subnet = create_test_subnet();
-        let member = create_test_member("bob_pub_key", SubnetRole::Member);
-        
-        subnet.add_member(member).await.unwrap();
-        assert_eq!(subnet.get_member_count().await, 1);
-        
-        let result = subnet.remove_member("bob_pub_key").await;
-        assert!(result.is_ok());
-        assert_eq!(subnet.get_member_count().await, 0);
+    #[test]
+    fn test_team_announcement_validation_empty_team_id() {
+        let announcement = TeamAnnouncement::new(
+            "".to_string(),
+            "node-001".to_string(),
+            vec![],
+            SecurityLevel::Unclassified,
+            "pubkey".to_string(),
+        );
+        assert!(announcement.validate().is_err());
     }
 
-    #[tokio::test]
-    async fn test_member_roles() {
-        let mut subnet = create_test_subnet();
-        
-        let leader = create_test_member("leader_key", SubnetRole::Leader);
-        let member = create_test_member("member_key", SubnetRole::Member);
-        let observer = create_test_member("observer_key", SubnetRole::Observer);
-        
-        subnet.add_member(leader).await.unwrap();
-        subnet.add_member(member).await.unwrap();
-        subnet.add_member(observer).await.unwrap();
-        
-        assert_eq!(subnet.get_member_count().await, 3);
-        
-        // Test role-specific permissions
-        let leader_member = subnet.get_member("leader_key").await.unwrap();
-        assert!(matches!(leader_member.role, SubnetRole::Leader));
-        
-        let regular_member = subnet.get_member("member_key").await.unwrap();
-        assert!(matches!(regular_member.role, SubnetRole::Member));
-        
-        let observer_member = subnet.get_member("observer_key").await.unwrap();
-        assert!(matches!(observer_member.role, SubnetRole::Observer));
+    #[test]
+    fn test_team_announcement_validation_empty_node_id() {
+        let announcement = TeamAnnouncement::new(
+            "team-alpha".to_string(),
+            "".to_string(),
+            vec![],
+            SecurityLevel::Unclassified,
+            "pubkey".to_string(),
+        );
+        assert!(announcement.validate().is_err());
     }
 
-    #[tokio::test]
-    async fn test_resource_sharing() {
-        let mut subnet = create_test_subnet();
-        let leader = create_test_member("leader_key", SubnetRole::Leader);
-        let member = create_test_member("member_key", SubnetRole::Member);
-        
-        subnet.add_member(leader).await.unwrap();
-        subnet.add_member(member).await.unwrap();
-        
-        let resource = SubnetResource {
-            resource_id: "intel_001".to_string(),
-            resource_type: ResourceType::Intelligence,
-            title: "Enemy Movement Report".to_string(),
-            data: b"Encrypted intelligence data".to_vec(),
-            shared_with: vec!["member_key".to_string()],
-            created_at: 1640995200,
-            created_by: "leader_key".to_string(),
-            classification: "CONFIDENTIAL".to_string(),
-        };
-        
-        let result = subnet.share_resource(resource, vec!["member_key".to_string()]).await;
-        assert!(result.is_ok());
-        
-        let shared_resources = subnet.get_shared_resources("member_key").await;
-        assert!(shared_resources.is_ok());
-        assert_eq!(shared_resources.unwrap().len(), 1);
+    #[test]
+    fn test_team_announcement_validation_empty_public_key() {
+        let announcement = TeamAnnouncement::new(
+            "team-alpha".to_string(),
+            "node-001".to_string(),
+            vec![],
+            SecurityLevel::Unclassified,
+            "".to_string(),
+        );
+        assert!(announcement.validate().is_err());
     }
 
-    #[tokio::test]
-    async fn test_member_discovery() {
-        let mut subnet = create_test_subnet();
-        
-        let alice = create_test_member("alice_key", SubnetRole::Leader);
-        let bob = create_test_member("bob_key", SubnetRole::Member);
-        let charlie = create_test_member("charlie_key", SubnetRole::Observer);
-        
-        subnet.add_member(alice).await.unwrap();
-        subnet.add_member(bob).await.unwrap();
-        subnet.add_member(charlie).await.unwrap();
-        
-        let peers = subnet.discover_peers("alice_key").await;
-        assert!(peers.is_ok());
-        assert_eq!(peers.unwrap().len(), 2); // Should find bob and charlie
+    #[test]
+    fn test_bridge_connection_creation() {
+        let bridge = BridgeConnection::new(
+            "team-beta".to_string(),
+            "bridge-001".to_string(),
+            SecurityLevel::Secret,
+            create_test_bridge_info(),
+        );
+        assert_eq!(bridge.remote_team_id, "team-beta");
+        assert_eq!(bridge.bridge_id, "bridge-001");
+        assert!(!bridge.is_active()); // Starts as Establishing
+        assert!(matches!(bridge.status, BridgeStatus::Establishing));
     }
 
-    #[tokio::test]
-    async fn test_subnet_status() {
-        let mut subnet = create_test_subnet();
-        let member = create_test_member("test_key", SubnetRole::Member);
-        subnet.add_member(member).await.unwrap();
-        
-        let status = subnet.get_status().await;
-        assert_eq!(status.subnet_id, "test-subnet-001");
-        assert_eq!(status.member_count, 1);
-        assert_eq!(status.online_members, 1);
-        assert!(status.is_active);
+    #[test]
+    fn test_bridge_connection_activity_update() {
+        let mut bridge = BridgeConnection::new(
+            "team-beta".to_string(),
+            "bridge-001".to_string(),
+            SecurityLevel::Unclassified,
+            create_test_bridge_info(),
+        );
+        let old_activity = bridge.last_activity;
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        bridge.update_activity();
+        assert!(bridge.last_activity >= old_activity);
     }
 
-    #[tokio::test]
-    async fn test_subnet_isolation() {
-        // Test that subnet operations don't affect external systems
-        // This test validates clean architecture separation
-        let subnet = create_test_subnet();
-        
-        // Subnet should not have any gateway dependencies
-        // This is validated by the fact that we can test subnet in isolation
-        assert!(true, "Subnet can be tested in isolation - clean architecture validated");
+    #[test]
+    fn test_bridge_connection_active_status() {
+        let mut bridge = BridgeConnection::new(
+            "team-beta".to_string(),
+            "bridge-001".to_string(),
+            SecurityLevel::Unclassified,
+            create_test_bridge_info(),
+        );
+        assert!(!bridge.is_active());
+        bridge.status = BridgeStatus::Active;
+        assert!(bridge.is_active());
+    }
+
+    #[test]
+    fn test_discovery_message_team_announcement() {
+        let announcement = create_test_announcement();
+        let message = BridgeDiscoveryMessage::new_team_announcement(
+            "team-alpha".to_string(),
+            "node-001".to_string(),
+            &announcement,
+        );
+        assert!(message.is_ok());
+        let msg = message.unwrap();
+        assert_eq!(msg.source_team_id, "team-alpha");
+        assert!(matches!(msg.message_type, DiscoveryMessageType::TeamAnnouncement));
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_discovery_message_validation_empty_source() {
+        let announcement = create_test_announcement();
+        let message = BridgeDiscoveryMessage::new_team_announcement(
+            "".to_string(),
+            "node-001".to_string(),
+            &announcement,
+        );
+        assert!(message.is_ok());
+        assert!(message.unwrap().validate().is_err());
+    }
+
+    #[test]
+    fn test_node_metrics_defaults() {
+        let metrics = NodeMetrics::default();
+        assert_eq!(metrics.latency_ms, 0);
+        assert_eq!(metrics.uptime_percentage, 0.0);
+        assert_eq!(metrics.message_throughput, 0);
+    }
+
+    #[test]
+    fn test_security_level_default() {
+        let level = SecurityLevel::default();
+        assert!(matches!(level, SecurityLevel::Unclassified));
+    }
+
+    #[test]
+    fn test_subnet_mode_variants() {
+        // Ensure all subnet modes can be constructed and compared
+        assert_eq!(SubnetMode::TeamSubnet, SubnetMode::TeamSubnet);
+        assert_ne!(SubnetMode::GlobalMesh, SubnetMode::Isolated);
     }
 }
