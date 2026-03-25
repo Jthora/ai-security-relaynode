@@ -464,16 +464,16 @@ impl SubscriptionManager {
 
     /// Check if event matches a specific filter
     fn event_matches_filter(&self, event: &NostrEvent, filter: &Filter) -> bool {
-        // Check IDs
+        // Check IDs (NIP-01: prefix matching)
         if let Some(ids) = &filter.ids {
-            if !ids.is_empty() && !ids.contains(&event.id) {
+            if !ids.is_empty() && !ids.iter().any(|prefix| event.id.starts_with(prefix)) {
                 return false;
             }
         }
 
-        // Check authors
+        // Check authors (NIP-01: prefix matching)
         if let Some(authors) = &filter.authors {
-            if !authors.is_empty() && !authors.contains(&event.pubkey) {
+            if !authors.is_empty() && !authors.iter().any(|prefix| event.pubkey.starts_with(prefix)) {
                 return false;
             }
         }

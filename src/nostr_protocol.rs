@@ -231,38 +231,44 @@ impl NostrProtocolHandler {
         Ok(event.id == expected_id)
     }
 
-    /// Validate event signature using secp256k1
+    /// Validate event signature using Schnorr (BIP-340) per NIP-01
     fn validate_signature(&self, event: &NostrEvent) -> Result<bool> {
-        use secp256k1::{Secp256k1, Message, PublicKey, ecdsa::Signature};
+        use secp256k1::{Secp256k1, Message, XOnlyPublicKey, schnorr::Signature};
         
-        let secp = Secp256k1::new();
+        let secp = Secp256k1::verification_only();
         
-        // Parse public key
+        // Parse 32-byte x-only public key (Nostr uses BIP-340 x-only keys)
         let pubkey_bytes = hex::decode(&event.pubkey)
             .context("Failed to decode public key")?;
-        let pubkey = PublicKey::from_slice(&pubkey_bytes)
-            .context("Invalid public key")?;
+        if pubkey_bytes.len() != 32 {
+            return Ok(false);
+        }
+        let pubkey = XOnlyPublicKey::from_slice(&pubkey_bytes)
+            .context("Invalid x-only public key")?;
         
-        // Parse signature
+        // Parse 64-byte Schnorr signature
         let sig_bytes = hex::decode(&event.sig)
             .context("Failed to decode signature")?;
-        let signature = Signature::from_compact(&sig_bytes)
-            .context("Invalid signature format")?;
+        if sig_bytes.len() != 64 {
+            return Ok(false);
+        }
+        let signature = Signature::from_slice(&sig_bytes)
+            .context("Invalid Schnorr signature format")?;
         
-        // Create message hash (event ID)
+        // Create message from event ID hash (32 bytes)
         let id_bytes = hex::decode(&event.id)
             .context("Failed to decode event ID")?;
         let message = Message::from_digest_slice(&id_bytes)
             .context("Invalid message hash")?;
         
-        // Verify signature
-        match secp.verify_ecdsa(&message, &signature, &pubkey) {
+        // Verify Schnorr signature
+        match secp.verify_schnorr(&signature, &message, &pubkey) {
             Ok(()) => {
-                debug!("✅ Signature verification passed for event: {}", event.id);
+                debug!("✅ Schnorr signature verified for event: {}", event.id);
                 Ok(true)
             }
             Err(e) => {
-                debug!("❌ Signature verification failed for event {}: {}", event.id, e);
+                debug!("❌ Schnorr signature verification failed for event {}: {}", event.id, e);
                 Ok(false)
             }
         }
@@ -285,16 +291,16 @@ impl NostrProtocolHandler {
 
     /// Check if event matches a specific filter
     pub fn event_matches_filter(&self, event: &NostrEvent, filter: &Filter) -> bool {
-        // Check IDs
+        // Check IDs (NIP-01: prefix matching)
         if let Some(ids) = &filter.ids {
-            if !ids.is_empty() && !ids.contains(&event.id) {
+            if !ids.is_empty() && !ids.iter().any(|prefix| event.id.starts_with(prefix)) {
                 return false;
             }
         }
         
-        // Check authors
+        // Check authors (NIP-01: prefix matching)
         if let Some(authors) = &filter.authors {
-            if !authors.is_empty() && !authors.contains(&event.pubkey) {
+            if !authors.is_empty() && !authors.iter().any(|prefix| event.pubkey.starts_with(prefix)) {
                 return false;
             }
         }
