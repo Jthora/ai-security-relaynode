@@ -63,14 +63,14 @@ impl SubscriptionManager {
         }
     }
 
-    /// Register a new WebSocket connection
-    pub async fn register_connection(
+    /// Register a new connection using a pre-created message sender channel.
+    /// The caller (NostrRelay) owns the WebSocket split and read loop.
+    pub async fn register_connection_with_sender(
         &self,
-        ws_stream: WebSocketStream<tokio::net::TcpStream>,
+        sender: mpsc::UnboundedSender<String>,
     ) -> Result<String> {
         let connection_id = Uuid::new_v4().to_string();
-        let (sender, mut receiver) = mpsc::unbounded_channel();
-        
+
         let connection = Connection {
             id: connection_id.clone(),
             pubkey: None,
@@ -82,8 +82,20 @@ impl SubscriptionManager {
             message_sender: sender,
         };
 
-        // Store connection
         self.connections.write().await.insert(connection_id.clone(), connection);
+
+        info!("📡 New connection registered: {}", connection_id);
+        Ok(connection_id)
+    }
+
+    /// Register a new WebSocket connection (legacy — splits the stream internally)
+    pub async fn register_connection(
+        &self,
+        ws_stream: WebSocketStream<tokio::net::TcpStream>,
+    ) -> Result<String> {
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        
+        let connection_id = self.register_connection_with_sender(sender).await?;
 
         // Spawn task to handle outgoing messages for this connection
         let connection_id_clone = connection_id.clone();
@@ -103,8 +115,18 @@ impl SubscriptionManager {
             info!("Connection {} closed and cleaned up", connection_id_clone);
         });
 
-        info!("📡 New connection registered: {}", connection_id);
         Ok(connection_id)
+    }
+
+    /// Remove a connection and its subscriptions
+    pub async fn remove_connection(&self, connection_id: &str) {
+        // Remove all subscriptions for this connection
+        let mut subscriptions = self.subscriptions.write().await;
+        subscriptions.retain(|_, sub| sub.connection_id != connection_id);
+        drop(subscriptions);
+
+        // Remove the connection itself
+        self.connections.write().await.remove(connection_id);
     }
 
     /// Authenticate a connection with Earth Alliance credentials

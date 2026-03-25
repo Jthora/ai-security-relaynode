@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::net::TcpListener;
-use tokio_tungstenite::{accept_async, WebSocketStream};
+use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
 use futures_util::{SinkExt, StreamExt};
 use tracing::{info, warn, error, debug};
@@ -160,13 +160,19 @@ impl NostrRelay {
         stream: tokio::net::TcpStream,
         remote_addr: String,
     ) -> Result<()> {
-        debug!("� New connection attempt from {}", remote_addr);
+        debug!("New connection attempt from {}", remote_addr);
 
         let ws_stream = accept_async(stream).await
             .context("WebSocket handshake failed")?;
 
-        // Register connection with subscription manager
-        let connection_id = self.subscription_manager.register_connection(ws_stream).await
+        // Split the WebSocket into read and write halves
+        let (ws_write, mut ws_read) = ws_stream.split();
+
+        // Create channel for outgoing messages
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+        // Register connection with subscription manager (gets the sender channel)
+        let connection_id = self.subscription_manager.register_connection_with_sender(tx.clone()).await
             .context("Failed to register connection")?;
 
         // Track connection
@@ -184,32 +190,65 @@ impl NostrRelay {
 
         info!("✅ Connection established: {} from {}", connection_id, remote_addr);
 
-        // The connection is now managed by the subscription manager
-        // We'll handle the actual message processing through the WebSocket stream
-        self.handle_websocket_messages(connection_id).await
-    }
+        // Spawn task to forward channel messages to WebSocket write half
+        let conn_id_write = connection_id.clone();
+        let ws_write = Arc::new(tokio::sync::Mutex::new(ws_write));
+        let ws_write_clone = Arc::clone(&ws_write);
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                let mut writer = ws_write_clone.lock().await;
+                if let Err(e) = writer.send(Message::Text(msg)).await {
+                    debug!("Write error for connection {}: {}", conn_id_write, e);
+                    break;
+                }
+            }
+        });
 
-    /// Handle WebSocket messages for a connection
-    async fn handle_websocket_messages(&self, connection_id: String) -> Result<()> {
-        // This is a placeholder - the actual message handling is done in the
-        // subscription manager through the WebSocket stream
-        
-        // For now, we'll keep the connection alive until it's closed
-        // In a production implementation, you'd want to handle this differently
-        
-        info!("📨 Message handler started for connection: {}", connection_id);
-        
-        // Wait for connection to be closed (simplified)
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-            
-            // Check if connection still exists
-            if !self.connections.read().await.contains_key(&connection_id) {
-                debug!("Connection {} closed", connection_id);
-                break;
+        // Read messages from WebSocket and dispatch them
+        while let Some(msg_result) = ws_read.next().await {
+            let msg = match msg_result {
+                Ok(msg) => msg,
+                Err(e) => {
+                    debug!("Read error for connection {}: {}", connection_id, e);
+                    break;
+                }
+            };
+
+            match msg {
+                Message::Text(text) => {
+                    match self.process_message(&connection_id, &text).await {
+                        Ok(Some(response)) => {
+                            if tx.send(response).is_err() {
+                                break; // Channel closed
+                            }
+                        }
+                        Ok(None) => {} // No response needed
+                        Err(e) => {
+                            warn!("Error processing message from {}: {}", connection_id, e);
+                            let notice = serde_json::json!(["NOTICE", format!("error: {}", e)]).to_string();
+                            if tx.send(notice).is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+                Message::Close(_) => {
+                    debug!("Connection {} sent close frame", connection_id);
+                    break;
+                }
+                Message::Ping(data) => {
+                    let mut writer = ws_write.lock().await;
+                    let _ = writer.send(Message::Pong(data)).await;
+                }
+                _ => {} // Ignore binary, pong, etc.
             }
         }
-        
+
+        // Clean up connection
+        self.connections.write().await.remove(&connection_id);
+        self.subscription_manager.remove_connection(&connection_id).await;
+        info!("Connection {} from {} disconnected", connection_id, remote_addr);
+
         Ok(())
     }
 
