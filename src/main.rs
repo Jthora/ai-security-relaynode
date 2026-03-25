@@ -46,12 +46,12 @@ async fn main() -> Result<(), anyhow::Error> {
     info!("================================================");
     
     // Load configuration
-    let _config = Config::load()?;
-    info!("✅ Configuration loaded");
+    let config = Config::load()?;
+    info!("Configuration loaded (relay_port={}, api_port={}, data_dir={})",
+          config.relay_port, config.api_port, config.data_dir);
     
     // Initialize database and run migrations
-    let database_url = "sqlite:./data/relaynode.db";
-    let db_manager = DatabaseManager::new(database_url).await?;
+    let db_manager = DatabaseManager::new(&config.database_url).await?;
     db_manager.run_migrations().await?;
     info!("✅ Database initialized and migrations completed");
     
