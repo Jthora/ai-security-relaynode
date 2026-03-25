@@ -62,7 +62,11 @@ async fn main() -> Result<(), anyhow::Error> {
     // Initialize services
     let security_layer = SecurityLayer::new().await?;
     let ipfs_node = Arc::new(IPFSNode::new(security_layer.clone()).await?);
-    let nostr_relay = Arc::new(NostrRelay::new(security_layer.clone(), None).await?);
+    let relay_addr = format!("127.0.0.1:{}", config.relay_port);
+    let nostr_relay = Arc::new(
+        NostrRelay::new(security_layer.clone(), Some(config.database_url.clone())).await?
+            .configure(&relay_addr, config.max_connections)
+    );
     let api_gateway = Arc::new(APIGateway::new(
         nostr_relay.clone(), 
         ipfs_node.clone(),
