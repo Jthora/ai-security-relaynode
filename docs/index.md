@@ -10,6 +10,7 @@ Detailed technical specs for the Minimum Viable Product.
 
 | Doc | Description |
 |-----|-------------|
+| [MVP-CHECKLIST.md](mvp/MVP-CHECKLIST.md) | **Master checklist: 6 stages, 19 phases, 50 steps, 193 tasks** |
 | [00-overview.md](mvp/00-overview.md) | Architecture, phases, success criteria |
 | [01-nostr-relay.md](mvp/01-nostr-relay.md) | NIP-01 Nostr relay spec & fix plan |
 | [02-content-store.md](mvp/02-content-store.md) | Content-addressed storage (replaces fake IPFS) |
