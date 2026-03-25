@@ -89,7 +89,7 @@ impl NostrRelay {
         // Initialize event store
         let db_url = database_url.unwrap_or_else(|| "sqlite:./data/nostr_events.db".to_string());
         let event_store: Arc<dyn EventStore> = Arc::new(
-            SqliteEventStore::new(&db_url).await
+            SqliteEventStore::connect(&db_url).await
                 .context("Failed to initialize event store")?
         );
 
@@ -272,19 +272,26 @@ impl NostrRelay {
         }
 
         // Store event
-        if let Err(e) = self.event_store.store_event(&event).await {
-            error!("Failed to store event {}: {}", event.id, e);
-            let response = NostrResponse::Ok {
-                event_id: event.id,
-                accepted: false,
-                message: "Storage error".to_string(),
-            };
-            return Ok(Some(response));
-        }
-
-        // Broadcast to subscribers
-        if let Err(e) = self.subscription_manager.broadcast_event(&event).await {
-            warn!("Failed to broadcast event {}: {}", event.id, e);
+        match self.event_store.store_event(&event).await {
+            Ok(is_new) => {
+                if is_new {
+                    // Broadcast to subscribers only for new events
+                    if let Err(e) = self.subscription_manager.broadcast_event(&event).await {
+                        warn!("Failed to broadcast event {}: {}", event.id, e);
+                    }
+                } else {
+                    debug!("Duplicate event {} ignored", event.id);
+                }
+            }
+            Err(e) => {
+                error!("Failed to store event {}: {}", event.id, e);
+                let response = NostrResponse::Ok {
+                    event_id: event.id,
+                    accepted: false,
+                    message: "Storage error".to_string(),
+                };
+                return Ok(Some(response));
+            }
         }
 
         // Send OK response

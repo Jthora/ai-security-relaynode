@@ -287,22 +287,9 @@ impl SubscriptionManager {
             anyhow::anyhow!("Connection not found: {}", connection_id)
         })?;
 
-        // Query events based on filters and Earth Alliance permissions
-        let events = if subscription.team_restricted {
-            if let Some(team_id) = &connection.team_id {
-                self.event_store.query_by_team(team_id, &subscription.filters).await?
-            } else {
-                Vec::new() // No team access
-            }
-        } else if subscription.clearance_restricted {
-            if let Some(clearance) = &connection.clearance_level {
-                self.event_store.query_by_clearance(clearance.clone(), &subscription.filters).await?
-            } else {
-                self.event_store.query_events(&subscription.filters).await?
-            }
-        } else {
-            self.event_store.query_events(&subscription.filters).await?
-        };
+        // Query events based on filters
+        // Note: Earth Alliance team/clearance filtering is done post-query via can_access_event
+        let events = self.event_store.query_events(&subscription.filters).await?;
 
         // Send events to client
         let mut sent_count = 0;
